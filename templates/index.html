@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Playlist Downloader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    header p {
+      margin-top: 8px;
+      color: #888;
+      font-size: 0.9rem;
+    }
+
+    /* ── input card ── */
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 28px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    input[type="url"] {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background: #111;
+      color: #e8e8e8;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input[type="url"]:focus { border-color: #fc3c44; }
+    input[type="url"]::placeholder { color: #555; }
+
+    button#btn-start {
+      padding: 12px 22px;
+      border-radius: 10px;
+      border: none;
+      background: #fc3c44;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .2s, opacity .2s;
+    }
+    button#btn-start:hover { background: #e0353d; }
+    button#btn-start:disabled { opacity: .45; cursor: default; }
+
+    /* ── status area ── */
+    #status-area { width: 100%; max-width: 640px; margin-top: 28px; }
+
+    .info-box {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .playlist-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .playlist-meta {
+      font-size: 0.82rem;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    /* progress bar */
+    .progress-wrap {
+      margin-top: 14px;
+      background: #2a2a2a;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #fc3c44;
+      border-radius: 99px;
+      width: 0%;
+      transition: width .4s ease;
+    }
+    .progress-label {
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 6px;
+    }
+
+    /* track list */
+    .track-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 420px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #333 transparent;
+    }
+    .track-list li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 14px;
+      border-radius: 8px;
+      background: #111;
+      font-size: 0.85rem;
+      transition: background .15s;
+    }
+    .track-list li.done  { background: #0d1f0e; }
+    .track-list li.failed { background: #1f0d0e; }
+    .track-list li.active { background: #1a1a2a; }
+
+    .track-num {
+      min-width: 26px;
+      text-align: right;
+      color: #555;
+      font-variant-numeric: tabular-nums;
+      font-size: 0.8rem;
+    }
+    .track-info { flex: 1; overflow: hidden; }
+    .track-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #ddd;
+    }
+    .track-artist {
+      font-size: 0.75rem;
+      color: #666;
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-status { font-size: 1rem; flex-shrink: 0; }
+
+    /* spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid #333;
+      border-top-color: #fc3c44;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* final banner */
+    .done-banner {
+      background: #0d1f0e;
+      border: 1px solid #1a3d1b;
+      border-radius: 14px;
+      padding: 20px 24px;
+      text-align: center;
+    }
+    .done-banner h2 { font-size: 1.1rem; color: #4caf50; }
+    .done-banner p  { color: #888; font-size: 0.85rem; margin-top: 6px; }
+
+    .error-banner {
+      background: #1f0d0e;
+      border: 1px solid #4a1a1b;
+      border-radius: 14px;
+      padding: 20px 24px;
+      color: #f66;
+      font-size: 0.9rem;
+    }
+
+    .log-line {
+      font-size: 0.82rem;
+      color: #666;
+      padding: 6px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Playlist Downloader</h1>
+    <p>Apple Music → MP3 pour ta montre Coros</p>
+  </header>
+
+  <div class="card">
+    <div class="input-row">
+      <input id="url-input" type="url"
+             placeholder="https://music.apple.com/fr/playlist/…"
+             autocomplete="off" spellcheck="false" />
+      <button id="btn-start" onclick="startDownload()">Télécharger</button>
+    </div>
+  </div>
+
+  <div id="status-area"></div>
+
+<script>
+  let eventSource = null;
+
+  async function startDownload() {
+    const url = document.getElementById("url-input").value.trim();
+    if (!url) return;
+
+    document.getElementById("btn-start").disabled = true;
+    document.getElementById("status-area").innerHTML = "";
+
+    // Close any previous SSE connection
+    if (eventSource) { eventSource.close(); eventSource = null; }
+
+    // Start job
+    const res = await fetch("/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      showError("Erreur serveur : impossible de démarrer le téléchargement.");
+      document.getElementById("btn-start").disabled = false;
+      return;
+    }
+    const { job_id } = await res.json();
+    listenToJob(job_id);
+  }
+
+  function listenToJob(jobId) {
+    eventSource = new EventSource(`/stream/${jobId}`);
+    const area = document.getElementById("status-area");
+
+    eventSource.onmessage = (e) => {
+      if (e.data === "__END__") {
+        eventSource.close();
+        document.getElementById("btn-start").disabled = false;
+        return;
+      }
+      const msg = JSON.parse(e.data);
+      handleMessage(msg, area);
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      document.getElementById("btn-start").disabled = false;
+    };
+  }
+
+  // ── Stateful rendering ──────────────────────────────────────────────────
+  let trackMap = {};   // position -> <li> element
+
+  function handleMessage(msg, area) {
+    switch (msg.type) {
+
+      case "log":
+        appendLog(area, msg.message);
+        break;
+
+      case "error":
+        area.innerHTML = `<div class="error-banner">⚠️ ${escHtml(msg.message)}</div>`;
+        break;
+
+      case "ready": {
+        trackMap = {};
+        area.innerHTML = `
+          <div class="info-box" id="info-box">
+            <div class="playlist-title">${escHtml(msg.playlist_name)}</div>
+            <div class="playlist-meta">${msg.tracks.length} titres · ${escHtml(msg.folder)}</div>
+            <div class="progress-wrap"><div class="progress-bar" id="prog-bar"></div></div>
+            <div class="progress-label" id="prog-label">Démarrage…</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <ul class="track-list" id="track-list"></ul>
+          </div>`;
+
+        const list = document.getElementById("track-list");
+        msg.tracks.forEach(t => {
+          const li = document.createElement("li");
+          li.id = `track-${t.position}`;
+          li.innerHTML = `
+            <span class="track-num">${String(t.position).padStart(2, "0")}</span>
+            <div class="track-info">
+              <div class="track-title">${escHtml(t.title)}</div>
+              <div class="track-artist">${escHtml(t.artist)}</div>
+            </div>
+            <span class="track-status">⏳</span>`;
+          list.appendChild(li);
+          trackMap[t.position] = li;
+        });
+        break;
+      }
+
+      case "track_start": {
+        const li = trackMap[msg.position];
+        if (!li) break;
+        li.classList.add("active");
+        const statusEl = li.querySelector(".track-status");
+        statusEl.innerHTML = "";
+        const spinner = document.createElement("div");
+        spinner.className = "spinner";
+        statusEl.appendChild(spinner);
+        li.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        updateProgress(msg.position - 1, msg.total);
+        break;
+      }
+
+      case "track_done": {
+        const li = trackMap[msg.position];
+        if (!li) break;
+        li.classList.remove("active");
+        if (msg.status === "ok" || msg.status === "skipped") {
+          li.classList.add("done");
+          li.querySelector(".track-status").textContent = "✓";
+        } else {
+          li.classList.add("failed");
+          li.querySelector(".track-status").textContent = "✗";
+        }
+        updateProgress(msg.position, msg.total);
+        break;
+      }
+
+      case "finished": {
+        const failedHtml = msg.failed.length
+          ? `<p>${msg.failed.length} titre(s) en échec</p>`
+          : "";
+        const banner = document.createElement("div");
+        banner.className = "done-banner";
+        banner.innerHTML = `
+          <h2>Terminé — ${msg.success} / ${msg.total} titres téléchargés</h2>
+          <p>Dossier : ${escHtml(msg.folder)}</p>
+          ${failedHtml}`;
+        document.getElementById("status-area").appendChild(banner);
+        break;
+      }
+    }
+  }
+
+  function updateProgress(done, total) {
+    const bar = document.getElementById("prog-bar");
+    const label = document.getElementById("prog-label");
+    if (!bar || !label) return;
+    const pct = Math.round((done / total) * 100);
+    bar.style.width = pct + "%";
+    label.textContent = `${done} / ${total} titres  (${pct}%)`;
+  }
+
+  function appendLog(area, msg) {
+    const p = document.createElement("p");
+    p.className = "log-line";
+    p.textContent = msg;
+    area.appendChild(p);
+  }
+
+  function showError(msg) {
+    document.getElementById("status-area").innerHTML =
+      `<div class="error-banner">⚠️ ${escHtml(msg)}</div>`;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Allow pressing Enter in the input field
+  document.getElementById("url-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") startDownload();
+  });
+</script>
+</body>
+</html>

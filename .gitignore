@@ -1,0 +1,8 @@
+downloads/
+tracks.json
+__pycache__/
+*.pyc
+*.pyo
+*.webm.part
+*.part
+*.webm
