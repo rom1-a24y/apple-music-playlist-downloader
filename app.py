@@ -71,7 +71,30 @@ def sanitize(name: str) -> str:
 
 # ── download worker ───────────────────────────────────────────────────────────
 
-def download_worker(job_id: str, url: str, output_base: Path):
+def search_attempts(title: str, artist: str) -> list[tuple[str, list[str]]]:
+    """(yt-dlp search target, extra args) to try in order until one gives a file."""
+    query = f"{artist} {title}".strip()
+    # Simplified query: main artist only, title without "(feat. …)" / "[Remix]" etc.
+    main_artist = re.split(r"\s*(?:&|,| feat\.? | x )\s*", artist)[0].strip()
+    short_title = re.sub(r"\s*[\(\[].*?[\)\]]", "", title).strip() or title
+    simple = f"{main_artist} {short_title}".strip()
+
+    no_preview = ["--match-filter", "duration > 60"]  # reject 30 s previews
+    alt_clients = ["--extractor-args", "youtube:player_client=tv,mweb,web_safari"]
+    attempts = [
+        (f"ytsearch1:{query}", []),
+        (f"ytsearch1:{query}", alt_clients),
+        (f"scsearch1:{query}", no_preview),
+    ]
+    if simple != query:
+        attempts += [
+            (f"ytsearch1:{simple}", alt_clients),
+            (f"scsearch1:{simple}", no_preview),
+        ]
+    return attempts
+
+
+def download_worker(job_id: str, url: str, output_base: Path, only: set[int] | None = None):
     q = jobs[job_id]
 
     def emit(event_type: str, **kwargs):
@@ -104,6 +127,8 @@ def download_worker(job_id: str, url: str, output_base: Path):
 
     success, failed = 0, []
     total = len(tracks)
+    if only:
+        tracks = [t for t in tracks if t["position"] in only]
 
     for track in tracks:
         pos = track["position"]
@@ -121,39 +146,41 @@ def download_worker(job_id: str, url: str, output_base: Path):
 
         emit("track_start", position=pos, total=total, title=title, artist=artist)
 
-        query = f"{artist} {title}".strip()
         template = str(output_dir / f"{stem}.%(ext)s")
 
-        # YouTube first; SoundCloud as fallback (YouTube often blocks cloud servers)
-        ok = False
-        for search in ("ytsearch1", "scsearch1"):
+        source, errors = None, []
+        for target, extra in search_attempts(title, artist):
             cmd = [
-                sys.executable, "-m", "yt_dlp",
-                f"{search}:{query}",
+                sys.executable, "-m", "yt_dlp", target,
                 "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0",
                 "--output", template,
                 "--no-playlist", "--quiet", "--no-warnings", "--no-progress",
+                *extra,
             ]
             if ffmpeg_path != "ffmpeg":
                 cmd += ["--ffmpeg-location", str(Path(ffmpeg_path).parent)]
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 if r.returncode == 0 and output_mp3.exists():
-                    ok = True
+                    source = target.split(":", 1)[0]
                     break
+                err = (r.stderr.strip().splitlines() or ["aucun résultat"])[-1]
             except subprocess.TimeoutExpired:
-                pass
+                err = "délai dépassé"
+            errors.append(f"{target.split(':', 1)[0]}: {err[:200]}")
 
-        if ok:
-            emit("track_done", position=pos, total=total, title=title, artist=artist, status="ok")
+        if source:
+            emit("track_done", position=pos, total=total, title=title, artist=artist,
+                 status="ok", source=source)
             success += 1
         else:
-            emit("track_done", position=pos, total=total, title=title, artist=artist, status="failed")
+            emit("track_done", position=pos, total=total, title=title, artist=artist,
+                 status="failed", errors=errors)
             failed.append(track)
 
         time.sleep(0.8)
 
-    emit("finished", success=success, total=total, failed=failed, folder=str(output_dir))
+    emit("finished", success=success, total=len(tracks), failed=failed, folder=str(output_dir))
     q.put(None)  # sentinel – stream ends
 
 

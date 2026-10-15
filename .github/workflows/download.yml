@@ -7,10 +7,14 @@ on:
       url:
         description: "Lien de la playlist Apple Music (vide = playlist.txt)"
         required: false
-  # Lancement automatique quand playlist.txt est modifié
+      positions:
+        description: "Numéros des titres à (re)télécharger, ex. 1,3,6-7 (vide = retry.txt, ou tous)"
+        required: false
+  # Lancement automatique quand playlist.txt ou retry.txt est modifié
   push:
     paths:
       - playlist.txt
+      - retry.txt
 
 jobs:
   download:
@@ -34,16 +38,19 @@ jobs:
       - name: Télécharger les MP3
         env:
           INPUT_URL: ${{ github.event.inputs.url }}
+          INPUT_POSITIONS: ${{ github.event.inputs.positions }}
         run: |
           URL="${INPUT_URL:-$(head -n1 playlist.txt)}"
+          POSITIONS="${INPUT_POSITIONS:-$(cat retry.txt 2>/dev/null | tr -d '\n')}"
           echo "Playlist : $URL"
-          python cli.py "$URL" downloads
+          echo "Titres : ${POSITIONS:-tous}"
+          python cli.py "$URL" downloads "$POSITIONS"
 
       - name: Publier les MP3 (ZIP à télécharger)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mp3
+          name: mp3-${{ github.run_number }}
           path: downloads/
           retention-days: 7
           if-no-files-found: warn
