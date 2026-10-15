@@ -123,25 +123,31 @@ def download_worker(job_id: str, url: str, output_base: Path):
 
         query = f"{artist} {title}".strip()
         template = str(output_dir / f"{stem}.%(ext)s")
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
-            f"ytsearch1:{query}",
-            "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0",
-            "--output", template,
-            "--no-playlist", "--quiet", "--no-warnings", "--no-progress",
-        ]
-        if ffmpeg_path != "ffmpeg":
-            cmd += ["--ffmpeg-location", str(Path(ffmpeg_path).parent)]
 
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if r.returncode == 0 and output_mp3.exists():
-                emit("track_done", position=pos, total=total, title=title, artist=artist, status="ok")
-                success += 1
-            else:
-                emit("track_done", position=pos, total=total, title=title, artist=artist, status="failed")
-                failed.append(track)
-        except subprocess.TimeoutExpired:
+        # YouTube first; SoundCloud as fallback (YouTube often blocks cloud servers)
+        ok = False
+        for search in ("ytsearch1", "scsearch1"):
+            cmd = [
+                sys.executable, "-m", "yt_dlp",
+                f"{search}:{query}",
+                "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0",
+                "--output", template,
+                "--no-playlist", "--quiet", "--no-warnings", "--no-progress",
+            ]
+            if ffmpeg_path != "ffmpeg":
+                cmd += ["--ffmpeg-location", str(Path(ffmpeg_path).parent)]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if r.returncode == 0 and output_mp3.exists():
+                    ok = True
+                    break
+            except subprocess.TimeoutExpired:
+                pass
+
+        if ok:
+            emit("track_done", position=pos, total=total, title=title, artist=artist, status="ok")
+            success += 1
+        else:
             emit("track_done", position=pos, total=total, title=title, artist=artist, status="failed")
             failed.append(track)
 

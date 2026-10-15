@@ -1,0 +1,49 @@
+name: Télécharger une playlist
+
+on:
+  # Lancement manuel depuis l'onglet Actions (téléphone ou PC)
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Lien de la playlist Apple Music (vide = playlist.txt)"
+        required: false
+  # Lancement automatique quand playlist.txt est modifié
+  push:
+    paths:
+      - playlist.txt
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Installer les dépendances
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Télécharger les MP3
+        env:
+          INPUT_URL: ${{ github.event.inputs.url }}
+        run: |
+          URL="${INPUT_URL:-$(head -n1 playlist.txt)}"
+          echo "Playlist : $URL"
+          python cli.py "$URL" downloads
+
+      - name: Publier les MP3 (ZIP à télécharger)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp3
+          path: downloads/
+          retention-days: 7
+          if-no-files-found: warn
